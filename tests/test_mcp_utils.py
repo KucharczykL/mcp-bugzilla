@@ -517,10 +517,32 @@ async def test_update_bug_not_found(bz_client):
         with pytest.raises(Exception) as exc_info:
             await bz_client.update_bug(bug_id=999999, updates={"priority": "high"})
 
-        assert (
-            "404" in str(exc_info.value)
-            or "does not exist" in str(exc_info.value).lower()
+        assert "does not exist" in str(exc_info.value).lower()
+
+
+@pytest.mark.asyncio
+async def test_update_bug_invalid_value_404_surfaces_message(bz_client):
+    """Bugzilla answers an invalid field value with HTTP 404 plus a JSON error
+    body (e.g. SUSE rejecting status 'CLOSED'). The Bugzilla message must be
+    surfaced instead of the generic httpx '404 Not Found' text."""
+    async with respx.mock(base_url=MOCK_URL) as respx_mock:
+        respx_mock.put("/rest/bug/123").mock(
+            return_value=Response(
+                404,
+                json={
+                    "code": 51,
+                    "error": True,
+                    "message": "There is no status named 'CLOSED'.",
+                },
+            )
         )
+
+        with pytest.raises(Exception) as exc_info:
+            await bz_client.update_bug(
+                bug_id=123, updates={"status": "CLOSED", "resolution": "FIXED"}
+            )
+
+        assert "no status named 'closed'" in str(exc_info.value).lower()
 
 
 @pytest.mark.asyncio

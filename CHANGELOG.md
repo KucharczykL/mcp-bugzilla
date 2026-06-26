@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
+## [Unreleased]
+
+### Fixed
+- Bug-update errors now surface Bugzilla's own message instead of the generic
+  httpx status text. Bugzilla pairs some validation errors with a misleading
+  HTTP 404 (e.g. rejecting an invalid `status` value with
+  `{"code": 51, "message": "There is no status named 'CLOSED'."}`); the message
+  was previously swallowed, leaving callers with only "404 Not Found". Such
+  responses now raise `BugzillaAPIError` carrying the code and message.
+
+### Changed
+- `update_bug_status` documents that valid statuses are instance-specific and
+  that some instances (e.g. bugzilla.suse.com) use `RESOLVED` rather than
+  `CLOSED`; a resolution is now required for `RESOLVED` as well as `CLOSED`.
+
 ## [v0.15.1] - 2026-06-22
 - Fix incorrect PyPi publishing
 

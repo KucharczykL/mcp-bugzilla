@@ -58,6 +58,36 @@ mcp_log.addHandler(handler)
 mcp_log.propagate = False
 
 
+class BugzillaAPIError(Exception):
+    """A Bugzilla error returned in a REST response body on a 4xx status.
+
+    Bugzilla reports application errors (unknown field value, missing bug,
+    permission denied, ...) as a JSON body with ``error``/``code``/``message``.
+    It sometimes pairs these with a misleading HTTP status — notably HTTP 404
+    for an invalid ``status`` value — so the JSON ``message`` is the reliable
+    signal and must be surfaced rather than the generic httpx status text.
+    """
+
+    def __init__(self, status_code: int, error: dict[str, Any]):
+        self.status_code = status_code
+        self.code = error.get("code")
+        self.message = error.get("message", "Unknown error")
+        super().__init__(
+            f"Bugzilla API error {self.code} (HTTP {status_code}): {self.message}"
+        )
+
+
+def _bugzilla_error_body(response: httpx.Response) -> Optional[dict[str, Any]]:
+    """Return Bugzilla's structured error dict from a response, or None."""
+    try:
+        body = response.json()
+    except Exception:
+        return None
+    if isinstance(body, dict) and body.get("error") and "message" in body:
+        return body
+    return None
+
+
 class Bugzilla:
     """Async Bugzilla API client"""
 
@@ -311,6 +341,16 @@ class Bugzilla:
             r = await self.client.put(url, json=payload)
             r.raise_for_status()
         except httpx.HTTPStatusError as e:
+            bz_error = _bugzilla_error_body(e.response)
+            if bz_error is not None:
+                # Bugzilla handled the request and rejected it. Note it pairs
+                # some validation errors with HTTP 404 (e.g. an invalid status
+                # value), so surface its message rather than the status text.
+                mcp_log.error(
+                    f"[BZ-RES] Failed: {e.response.status_code} "
+                    f"code={bz_error.get('code')} {bz_error['message']}"
+                )
+                raise BugzillaAPIError(e.response.status_code, bz_error) from e
             mcp_log.error(
                 f"[BZ-RES] Failed: {e.response.status_code} {e.response.text}"
             )
