@@ -320,6 +320,16 @@ def _update_bz():
 
 
 @pytest.mark.asyncio
+async def test_update_bug_fields_no_reset_keys_by_default():
+    """A normal update must not ship reset_* keys when the flags are False."""
+    bz = _update_bz()
+
+    await server.update_bug_fields(bug_id=123, priority="high", bz=bz)
+
+    bz.update_bug.assert_awaited_once_with(123, {"priority": "high"}, "")
+
+
+@pytest.mark.asyncio
 async def test_update_bug_fields_reset_qa_contact():
     bz = _update_bz()
 
