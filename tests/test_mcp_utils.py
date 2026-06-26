@@ -692,7 +692,7 @@ async def test_get_product_returns_envelope(bz_client):
                                 {
                                     "id": 1421,
                                     "name": "Release Notes",
-                                    "default_assignee": "dev@example.com",
+                                    "default_assigned_to": "dev@example.com",
                                     "default_qa_contact": "qa@example.com",
                                     "is_active": True,
                                 }

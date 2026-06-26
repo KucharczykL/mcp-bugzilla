@@ -99,7 +99,12 @@ async def bug_info(bug_ids: set[int], bz: Bugzilla = Depends(get_bz)) -> dict[st
 
 
 class ComponentDefaults(TypedDict):
-    """The default assignee/QA contact Bugzilla applies for a component."""
+    """The default assignee/QA contact Bugzilla applies for a component.
+
+    ``default_assignee`` / ``default_qa_contact`` are ``None`` when Bugzilla omits
+    them from the product payload — which happens when the API key lacks the
+    visibility to see them, not only when a component genuinely has none set.
+    """
 
     product: str
     component: str
@@ -110,7 +115,7 @@ class ComponentDefaults(TypedDict):
 
 @mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": True}, tags={"read"})
 async def get_component_defaults(
-    component: str,
+    component: Optional[str] = None,
     product: Optional[str] = None,
     bug_id: Optional[int] = None,
     bz: Bugzilla = Depends(get_bz),
@@ -118,14 +123,15 @@ async def get_component_defaults(
     """Look up a component's default assignee and QA contact.
 
     Bugzilla has no component endpoint, so the defaults are read from the parent
-    product. Supply ``product`` explicitly, or pass ``bug_id`` to resolve the
-    product (and component, if omitted) from that bug. Useful before deciding
-    whom to assign; to actually reset a bug to these defaults, use
-    ``update_bug_fields`` with ``reset_qa_contact`` / ``reset_assigned_to``.
+    product. Supply ``product`` and ``component`` explicitly, or pass ``bug_id``
+    to resolve them from that bug (an explicit ``product``/``component`` still
+    wins). Useful before deciding whom to assign; to actually reset a bug to
+    these defaults, use ``update_bug_fields`` with ``reset_qa_contact`` /
+    ``reset_assigned_to``.
 
     Args:
-        component: Component name to look up
-        product: Product the component belongs to (required unless bug_id given)
+        component: Component name to look up (resolved from bug_id if omitted)
+        product: Product the component belongs to (resolved from bug_id if omitted)
         bug_id: Resolve product/component from this bug instead of passing them
     """
     mcp_log.info(
@@ -134,18 +140,28 @@ async def get_component_defaults(
     )
 
     try:
-        if bug_id is not None and not product:
+        resolved_from_bug = False
+        if bug_id is not None and (not product or not component):
             envelope = await bz.bug_info({bug_id})
             bugs = envelope.get("bugs", [])
             if not bugs:
                 raise ToolError(f"Bug {bug_id} not found")
-            product = bugs[0].get("product")
+            product = product or bugs[0].get("product")
             component = component or bugs[0].get("component")
+            resolved_from_bug = True
 
         if not product:
-            raise ToolError("Either `product` or `bug_id` must be supplied")
+            raise ToolError(
+                f"Bug {bug_id} returned no product field"
+                if resolved_from_bug
+                else "Either `product` or `bug_id` must be supplied"
+            )
         if not component:
-            raise ToolError("A `component` is required")
+            raise ToolError(
+                f"Bug {bug_id} returned no component field; pass `component` explicitly"
+                if resolved_from_bug
+                else "Either `component` or `bug_id` must be supplied"
+            )
 
         envelope = await bz.get_product(product)
         products = envelope.get("products", [])
@@ -158,7 +174,8 @@ async def get_component_defaults(
                 return ComponentDefaults(
                     product=product,
                     component=component,
-                    default_assignee=comp.get("default_assignee"),
+                    # Bugzilla exposes the default assignee as `default_assigned_to`.
+                    default_assignee=comp.get("default_assigned_to"),
                     default_qa_contact=comp.get("default_qa_contact"),
                     is_active=comp.get("is_active"),
                 )
