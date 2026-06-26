@@ -210,6 +210,40 @@ class Bugzilla:
         mcp_log.debug(f"[BZ-RES] {envelope}")
         return envelope
 
+    async def get_product(self, name: str) -> dict[str, Any]:
+        """Get a product (including its components and their defaults) by name.
+
+        Bugzilla has no component endpoint; component defaults (default assignee
+        and QA contact) are only exposed nested under their parent product.
+        """
+        params = {"names": name}
+        mcp_log.info(f"[BZ-REQ] GET {self.api_url}/product params={params}")
+
+        try:
+            r = await self.client.get("/product", params=params)
+            r.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            bz_error = _bugzilla_error_body(e.response)
+            if bz_error is not None:
+                mcp_log.error(
+                    f"[BZ-RES] Failed: {e.response.status_code} "
+                    f"code={bz_error.get('code')} {bz_error['message']}"
+                )
+                raise BugzillaAPIError(e.response.status_code, bz_error) from e
+            mcp_log.error(
+                f"[BZ-RES] Failed: {e.response.status_code} {e.response.text}"
+            )
+            raise
+        except httpx.RequestError as e:
+            mcp_log.error(f"[BZ-RES] Network Error: {e}")
+            raise
+
+        envelope = r.json()
+        products = envelope.get("products", [])
+        mcp_log.info(f"[BZ-RES] Retrieved {len(products)} products")
+        mcp_log.debug(f"[BZ-RES] {envelope}")
+        return envelope
+
     async def bug_history(
         self, bug_id: int, new_since: Optional[datetime] = None
     ) -> list[dict[str, Any]]:

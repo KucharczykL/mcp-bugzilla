@@ -390,3 +390,77 @@ async def test_update_bug_fields_no_fields_raises():
         await server.update_bug_fields(bug_id=123, bz=bz)
 
     bz.update_bug.assert_not_awaited()
+
+
+_PRODUCT_ENVELOPE = {
+    "products": [
+        {
+            "id": 15,
+            "name": "ProdX",
+            "components": [
+                {
+                    "name": "Release Notes",
+                    "default_assignee": "dev@example.com",
+                    "default_qa_contact": "qa@example.com",
+                    "is_active": True,
+                }
+            ],
+        }
+    ]
+}
+
+
+def _product_bz():
+    bz = AsyncMock()
+    bz.get_product = AsyncMock(return_value=_PRODUCT_ENVELOPE)
+    return bz
+
+
+@pytest.mark.asyncio
+async def test_get_component_defaults_explicit_product():
+    bz = _product_bz()
+
+    result = await server.get_component_defaults(
+        component="Release Notes", product="ProdX", bz=bz
+    )
+
+    assert result["default_qa_contact"] == "qa@example.com"
+    assert result["default_assignee"] == "dev@example.com"
+    assert result["is_active"] is True
+    bz.get_product.assert_awaited_once_with("ProdX")
+
+
+@pytest.mark.asyncio
+async def test_get_component_defaults_resolves_from_bug_id():
+    bz = _product_bz()
+    bz.bug_info = AsyncMock(
+        return_value={"bugs": [{"product": "ProdX", "component": "Release Notes"}]}
+    )
+
+    # Neither product nor component supplied beyond the bug.
+    result = await server.get_component_defaults(component="", bug_id=42, bz=bz)
+
+    assert result["product"] == "ProdX"
+    assert result["component"] == "Release Notes"
+    assert result["default_qa_contact"] == "qa@example.com"
+    bz.bug_info.assert_awaited_once_with({42})
+
+
+@pytest.mark.asyncio
+async def test_get_component_defaults_component_not_found():
+    bz = _product_bz()
+
+    with pytest.raises(ToolError, match="not found in product"):
+        await server.get_component_defaults(
+            component="Nonexistent", product="ProdX", bz=bz
+        )
+
+
+@pytest.mark.asyncio
+async def test_get_component_defaults_requires_product_or_bug_id():
+    bz = _product_bz()
+
+    with pytest.raises(ToolError, match="product.*or.*bug_id"):
+        await server.get_component_defaults(component="Release Notes", bz=bz)
+
+    bz.get_product.assert_not_awaited()

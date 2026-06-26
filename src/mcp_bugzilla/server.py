@@ -98,6 +98,82 @@ async def bug_info(bug_ids: set[int], bz: Bugzilla = Depends(get_bz)) -> dict[st
         raise ToolError(f"Failed to fetch bug info\nReason: {e}")
 
 
+class ComponentDefaults(TypedDict):
+    """The default assignee/QA contact Bugzilla applies for a component."""
+
+    product: str
+    component: str
+    default_assignee: Optional[str]
+    default_qa_contact: Optional[str]
+    is_active: Optional[bool]
+
+
+@mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": True}, tags={"read"})
+async def get_component_defaults(
+    component: str,
+    product: Optional[str] = None,
+    bug_id: Optional[int] = None,
+    bz: Bugzilla = Depends(get_bz),
+) -> ComponentDefaults:
+    """Look up a component's default assignee and QA contact.
+
+    Bugzilla has no component endpoint, so the defaults are read from the parent
+    product. Supply ``product`` explicitly, or pass ``bug_id`` to resolve the
+    product (and component, if omitted) from that bug. Useful before deciding
+    whom to assign; to actually reset a bug to these defaults, use
+    ``update_bug_fields`` with ``reset_qa_contact`` / ``reset_assigned_to``.
+
+    Args:
+        component: Component name to look up
+        product: Product the component belongs to (required unless bug_id given)
+        bug_id: Resolve product/component from this bug instead of passing them
+    """
+    mcp_log.info(
+        f"[LLM-REQ] get_component_defaults(component={component!r}, "
+        f"product={product!r}, bug_id={bug_id})"
+    )
+
+    try:
+        if bug_id is not None and not product:
+            envelope = await bz.bug_info({bug_id})
+            bugs = envelope.get("bugs", [])
+            if not bugs:
+                raise ToolError(f"Bug {bug_id} not found")
+            product = bugs[0].get("product")
+            component = component or bugs[0].get("component")
+
+        if not product:
+            raise ToolError("Either `product` or `bug_id` must be supplied")
+        if not component:
+            raise ToolError("A `component` is required")
+
+        envelope = await bz.get_product(product)
+        products = envelope.get("products", [])
+        if not products:
+            raise ToolError(f"Product {product!r} not found")
+
+        components = products[0].get("components", [])
+        for comp in components:
+            if comp.get("name") == component:
+                return ComponentDefaults(
+                    product=product,
+                    component=component,
+                    default_assignee=comp.get("default_assignee"),
+                    default_qa_contact=comp.get("default_qa_contact"),
+                    is_active=comp.get("is_active"),
+                )
+
+        available = ", ".join(c.get("name", "?") for c in components)
+        raise ToolError(
+            f"Component {component!r} not found in product {product!r}. "
+            f"Available components: {available}"
+        )
+    except ToolError:
+        raise
+    except Exception as e:
+        raise ToolError(f"Failed to fetch component defaults\n{e}")
+
+
 @mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": True}, tags={"read"})
 async def bug_history(
     id: int,

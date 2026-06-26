@@ -2,7 +2,12 @@ import pytest
 import pytest_asyncio
 import respx
 from httpx import Response
-from mcp_bugzilla.mcp_utils import Bugzilla, is_textual, safe_filename
+from mcp_bugzilla.mcp_utils import (
+    Bugzilla,
+    BugzillaAPIError,
+    is_textual,
+    safe_filename,
+)
 from datetime import datetime
 
 MOCK_URL = "https://bugzilla.example.com"
@@ -670,3 +675,53 @@ def test_is_textual(content_type, expected):
 )
 def test_safe_filename(name, expected):
     assert safe_filename(name, 7) == expected
+
+
+@pytest.mark.asyncio
+async def test_get_product_returns_envelope(bz_client):
+    async with respx.mock(base_url=MOCK_URL) as respx_mock:
+        route = respx_mock.get("/rest/product").mock(
+            return_value=Response(
+                200,
+                json={
+                    "products": [
+                        {
+                            "id": 15,
+                            "name": "ProdX",
+                            "components": [
+                                {
+                                    "id": 1421,
+                                    "name": "Release Notes",
+                                    "default_assignee": "dev@example.com",
+                                    "default_qa_contact": "qa@example.com",
+                                    "is_active": True,
+                                }
+                            ],
+                        }
+                    ]
+                },
+            )
+        )
+
+        envelope = await bz_client.get_product("ProdX")
+
+        assert envelope["products"][0]["components"][0]["name"] == "Release Notes"
+        # The product name must be passed as the `names` query param.
+        assert route.calls.last.request.url.params["names"] == "ProdX"
+
+
+@pytest.mark.asyncio
+async def test_get_product_error_body_surfaced(bz_client):
+    async with respx.mock(base_url=MOCK_URL) as respx_mock:
+        respx_mock.get("/rest/product").mock(
+            return_value=Response(
+                404,
+                json={"error": True, "code": 51, "message": "No product named 'Nope'."},
+            )
+        )
+
+        with pytest.raises(BugzillaAPIError) as exc:
+            await bz_client.get_product("Nope")
+
+        assert exc.value.code == 51
+        assert "No product named" in exc.value.message
