@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+- `update_bug_fields` gains `reset_qa_contact` and `reset_assigned_to` flags that
+  reset those fields to the component's default. These map to Bugzilla's native
+  `Bug.update` booleans (server-side reset), not a client-side write-back, so the
+  default is resolved by Bugzilla itself.
+
 ### Fixed
 - Bug-update errors now surface Bugzilla's own message instead of the generic
   httpx status text. Bugzilla pairs some validation errors with a misleading
