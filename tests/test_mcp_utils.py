@@ -2,7 +2,7 @@ import pytest
 import pytest_asyncio
 import respx
 from httpx import Response
-from mcp_bugzilla.mcp_utils import Bugzilla
+from mcp_bugzilla.mcp_utils import Bugzilla, is_textual, safe_filename
 from datetime import datetime
 
 MOCK_URL = "https://bugzilla.example.com"
@@ -604,3 +604,47 @@ async def test_update_bug_comment_only(bz_client):
         assert route.called
         request_body = route.calls.last.request.content
         assert b"Just adding a comment" in request_body
+
+
+@pytest.mark.parametrize(
+    "content_type,expected",
+    [
+        ("text/plain", True),
+        ("text/x-log", True),
+        ("text/plain; charset=utf-8", True),
+        ("TEXT/PLAIN", True),
+        ("application/json", True),
+        ("application/xml", True),
+        ("application/x-yaml", True),
+        ("image/svg+xml", True),
+        ("application/foo+xml", True),
+        ("application/vnd.api+json", True),
+        ("text/x-patch", True),
+        ("application/x-diff", True),
+        ("application/octet-stream", False),
+        ("image/png", False),
+        ("application/pdf", False),
+        ("", False),
+        (None, False),
+    ],
+)
+def test_is_textual(content_type, expected):
+    assert is_textual(content_type) is expected
+
+
+@pytest.mark.parametrize(
+    "name,expected",
+    [
+        ("report.txt", "report.txt"),
+        ("../../etc/passwd", "passwd"),
+        ("/abs/path/file.log", "file.log"),
+        ("weird name!@#.txt", "weird_name___.txt"),
+        ("café.txt", "caf_.txt"),
+        (None, "attachment-7"),
+        ("", "attachment-7"),
+        ("...", "attachment-7"),
+        ("///", "attachment-7"),
+    ],
+)
+def test_safe_filename(name, expected):
+    assert safe_filename(name, 7) == expected
