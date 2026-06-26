@@ -11,6 +11,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   reset those fields to the component's default. These map to Bugzilla's native
   `Bug.update` booleans (server-side reset), not a client-side write-back, so the
   default is resolved by Bugzilla itself.
+- New read-only `get_component_defaults` tool returns a component's default
+  assignee and QA contact. Bugzilla exposes no component endpoint, so the defaults
+  are read from the parent product (new `Bugzilla.get_product` helper). Accepts an
+  explicit `product`, or a `bug_id` to resolve the product/component from a bug.
 
 ### Fixed
 - Bug-update errors now surface Bugzilla's own message instead of the generic

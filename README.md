@@ -46,6 +46,14 @@ The server provides the following tools for interacting with Bugzilla:
   - **Returns**: A list of comment dictionaries, each containing author, timestamp, text, and privacy status
   - **Example**: `bug_comments(12345, include_private_comments=True, new_since=datetime.fromisoformat("2026-01-01T00:00:00"))` returns all comments newer than Jan 1, 2026 including private ones
 
+- **`get_component_defaults(component: str, product: str = None, bug_id: int = None)`**: Looks up a component's default assignee and QA contact (read from the parent product, since Bugzilla has no component endpoint).
+  - **Parameters**:
+    - `component`: Component name to look up
+    - `product`: Product the component belongs to (required unless `bug_id` is given)
+    - `bug_id`: Resolve product/component from this bug instead of passing them
+  - **Returns**: A dictionary with `product`, `component`, `default_assignee`, `default_qa_contact`, `is_active`
+  - **Example**: `get_component_defaults(bug_id=12345)` returns the defaults for that bug's component. To reset a bug *to* these defaults, use `update_bug_fields(..., reset_qa_contact=True)`.
+
 
 
 - **`add_comment(bug_id: int, comment: str, is_private: bool = False)`**: Adds a new comment to a specified bug.
