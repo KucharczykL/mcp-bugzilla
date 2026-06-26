@@ -310,3 +310,73 @@ async def test_list_attachments_tool_passthrough():
 
     assert [a["id"] for a in result] == [1, 2]
     bz.list_attachments.assert_awaited_once_with(123)
+
+
+def _update_bz():
+    """A stand-in Bugzilla client exposing only update_bug."""
+    bz = AsyncMock()
+    bz.update_bug = AsyncMock(return_value={"bugs": [{"id": 123}]})
+    return bz
+
+
+@pytest.mark.asyncio
+async def test_update_bug_fields_reset_qa_contact():
+    bz = _update_bz()
+
+    await server.update_bug_fields(bug_id=123, reset_qa_contact=True, bz=bz)
+
+    bz.update_bug.assert_awaited_once_with(123, {"reset_qa_contact": True}, "")
+
+
+@pytest.mark.asyncio
+async def test_update_bug_fields_reset_assigned_to():
+    bz = _update_bz()
+
+    await server.update_bug_fields(bug_id=123, reset_assigned_to=True, bz=bz)
+
+    bz.update_bug.assert_awaited_once_with(123, {"reset_assigned_to": True}, "")
+
+
+@pytest.mark.asyncio
+async def test_update_bug_fields_reset_both_with_other_fields():
+    bz = _update_bz()
+
+    await server.update_bug_fields(
+        bug_id=123,
+        priority="high",
+        reset_qa_contact=True,
+        reset_assigned_to=True,
+        comment="reset to defaults",
+        bz=bz,
+    )
+
+    bz.update_bug.assert_awaited_once_with(
+        123,
+        {
+            "priority": "high",
+            "reset_qa_contact": True,
+            "reset_assigned_to": True,
+        },
+        "reset to defaults",
+    )
+
+
+@pytest.mark.asyncio
+async def test_update_bug_fields_bare_reset_is_valid():
+    """A reset-only call must satisfy the 'at least one field' guard."""
+    bz = _update_bz()
+
+    # Must not raise "At least one field must be specified".
+    await server.update_bug_fields(bug_id=123, reset_qa_contact=True, bz=bz)
+
+    bz.update_bug.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_update_bug_fields_no_fields_raises():
+    bz = _update_bz()
+
+    with pytest.raises(ToolError, match="At least one field"):
+        await server.update_bug_fields(bug_id=123, bz=bz)
+
+    bz.update_bug.assert_not_awaited()
